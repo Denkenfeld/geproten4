@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Neon-Zoo: Tipp-Abenteuer</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@700;900&display=swap');
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #0b0c15;
+            font-family: 'Nunito', sans-serif;
+            color: white;
+            user-select: none;
+        }
+
+        #canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+        }
+
+        /* UI Overlay */
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* HUD */
+        .hud {
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            text-shadow: 0 0 10px rgba(78, 205, 196, 0.8);
+        }
+
+        h1 {
+            font-family: 'Fredoka One', cursive;
+            font-size: 2.5rem;
+            margin: 0;
+            background: linear-gradient(to right, #ff6b6b, #feca57);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(0px 0px 5px rgba(255, 107, 107, 0.5));
+        }
+
+        .score-box {
+            background: rgba(0,0,0,0.4);
+            backdrop-filter: blur(10px);
+            padding: 10px 25px;
+            border-radius: 20px;
+            border: 2px solid rgba(255,255,255,0.1);
+            text-align: right;
+        }
+        
+        .combo-meter {
+            font-size: 1.5rem;
+            color: #feca57;
+            font-weight: 900;
+            opacity: 0;
+            transition: opacity 0.2s, transform 0.1s;
+        }
+        .combo-meter.active { opacity: 1; transform: scale(1.2); }
+
+        /* Center Feedback */
+        #center-feedback {
+            position: absolute;
+            top: 20%;
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+            pointer-events: none;
+        }
+        
+        #current-target-display {
+            font-size: 4rem;
+            font-family: 'Fredoka One';
+            color: rgba(255,255,255,0.1);
+            transition: color 0.2s;
+        }
+        #current-target-display.lit {
+            color: rgba(255,255,255,0.9);
+            text-shadow: 0 0 20px #4ecdc4;
+        }
+
+        /* Keyboard Helper */
+        #keyboard-helper {
+            margin-top: auto;
+            margin-bottom: 20px;
+            align-self: center;
+            background: rgba(0,0,0,0.5);
+            padding: 10px 30px;
+            border-radius: 50px;
+            backdrop-filter: blur(5px);
+            border: 1px solid rgba(255,255,255,0.1);
+            pointer-events: auto;
+            transition: transform 0.2s;
+        }
+
+        .key-hint {
+            display: inline-block;
+            width: 50px;
+            height: 50px;
+            line-height: 50px;
+            background: #fff;
+            color: #333;
+            border-radius: 12px;
+            text-align: center;
+            font-family: 'Fredoka One';
+            font-size: 1.5rem;
+            margin: 0 5px;
+            box-shadow: 0 5px 0 #ccc;
+        }
+
+        .key-hint.active {
+            background: #ff6b6b;
+            color: white;
+            transform: translateY(3px);
+            box-shadow: 0 2px 0 #b33939;
+        }
+
+        /* Screens */
+        .screen {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(11, 12, 21, 0.95);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            pointer-events: auto;
+            transition: opacity 0.5s;
+        }
+        .hidden { opacity: 0; pointer-events: none; display: none !important; }
+
+        .btn {
+            background: linear-gradient(45deg, #ff6b6b, #ff9ff3);
+            border: none;
+            padding: 20px 60px;
+            font-size: 2rem;
+            color: white;
+            font-family: 'Fredoka One';
+            border-radius: 60px;
+            cursor: pointer;
+            box-shadow: 0 0 30px rgba(255, 107, 107, 0.5);
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-top: 20px;
+        }
+        .btn:hover { transform: scale(1.1); box-shadow: 0 0 50px rgba(255, 107, 107, 0.8); }
+
+        h2 { font-size: 2rem; color: #4ecdc4; margin: 10px 0; }
+        p { font-size: 1.2rem; color: #aaa; max-width: 600px; text-align: center; line-height: 1.5; }
+
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+</head>
+<body>
+
+<div id="canvas-container"></div>
+
+<div id="ui-layer">
+    <div class="hud">
+        <h1>🚀 Neon-Zoo</h1>
+        <div class="score-box">
+            <div id="score-display">Punkte: 0</div>
+            <div id="combo-display" class="combo-meter">COMBO x2!</div>
+        </div>
+    </div>
+
+    <div id="center-feedback">
+        <div id="current-target-display">F</div>
+    </div>
+
+    <div id="keyboard-helper">
+        <span class="key-hint" id="hint-left">?</span>
+        <span class="key-hint" id="hint-right">?</span>
+    </div>
+</div>
+
+<div id="start-screen" class="screen">
+    <h1 style="font-size: 5rem; margin-bottom: 0; text-shadow: 0 0 40px rgba(255,107,180,0.5);">Neon-Zoo</h1>
+    <h2>Das kosmische Tipp-Abenteuer</h2>
+    <p>Buchstaben fliegen auf dich zu!<br>Tippe sie genau im richtigen Moment, damit dein Tier sie frisst.</p>
+    <button class="btn" id="start-btn">LOS GEHT'S! ▶</button>
+</div>
+
+<div id="level-screen" class="screen hidden">
+    <h1 style="color: #feca57;">Fantastisch! 🌟</h1>
+    <p id="level-msg">Dein Tier ist super glücklich!</p>
+    <div style="font-size: 6rem; margin: 20px; animation: bounce 1s infinite;">💩🌈</div>
+    <p style="font-size:1rem; opacity:0.8;">(Es hat Glitzer-Pupu gemacht! Hihi!)</p>
+    <button class="btn" id="next-level-btn">Nächstes Level ▶</button>
+</div>
+
+<script>
+/**
+ * ------------------------------------------------------------------
+ * CONFIGURATION & STATE
+ * ------------------------------------------------------------------
+ */
+const CONFIG = {
+    levels: [
+        { keys: "f", name: "Training F", pattern: ["f","f","f","f"] },
+        { keys: "j", name: "Training J", pattern: ["j","j","j","j"] },
+        { keys: "fj", name: "Links & Rechts", pattern: ["fff", "jjj", "fjf", "jfj"] },
+        { keys: "dk", name: "D & K", pattern: ["ddd", "kkk", "dkd", "kdk"] },
+        { keys: "sl", name: "S & L", pattern: ["sss", "lll", "sls", "lsl"] },
+        { keys: "aö", name: "A & Ö", pattern: ["aaa", "ööö", "aöa"] },
+        { keys: "qwertz", name: "Die obere Reihe", pattern: ["qwe", "rtz", "tre"] }
+    ],
+    gameSpeed: 0.15,
+    spawnDistance: -60,
+    eatDistance: 4,
+    colors: [0xff6b6b, 0x4ecdc4, 0xffd93d, 0xff9ff3, 0x6c5ce7]
+};
+
+const STATE = {
+    currentLevel: 0,
+    score: 0,
+    combo: 0,
+    isPlaying: false,
+    entities: [], // Moving letters
+    time: 0,
+    nextSpawnTime: 0,
+    queue: [],
+    levelProgress: 0,
+    levelTarget: 20
+};
+
+/**
+ * ------------------------------------------------------------------
+ * THREE.JS SETUP & VISUALS
+ * ------------------------------------------------------------------
+ */
+let scene, camera, renderer, clock;
+let animalContainer, animalBody, animalHead, animalTail, animalMouth;
+let floorMesh;
+const textureLoader = new THREE.TextureLoader();
+
+function initThree() {
+    const container = document.getElementById('canvas-container');
+    
+    scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x0b0c15, 0.03);
+
+    // Camera setup for "Runner" view
+    camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 3, 8); 
+    camera.lookAt(0, 0, -5);
+
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Perf opt
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    container.appendChild(renderer.domElement);
+
+    clock = new THREE.Clock();
+
+    // Lights
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+    scene.add(ambientLight);
+    
+    const spotLight = new THREE.SpotLight(0xff6b6b, 10);
+    spotLight.position.set(5, 10, 5);
+    spotLight.angle = 0.5;
+    spotLight.penumbra = 1;
+    scene.add(spotLight);
+
+    const blueLight = new THREE.PointLight(0x4ecdc4, 2, 20);
+    blueLight.position.set(-5, 2, -5);
+    scene.add(blueLight);
+
+    createHyperspaceFloor();
+    createCuteCharacter();
+    
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    animate();
+}
+
+/**
+ * CUSTOM SHADER FLOOR ("The Grid")
+ */
+function createHyperspaceFloor() {
+    const geometry = new THREE.PlaneGeometry(200, 200, 40, 40);
+    
+    const uniforms = {
+        uTime: { value: 0 },
+        uColor1: { value: new THREE.Color(0x2d3436) },
+        uColor2: { value: new THREE.Color(0x4ecdc4) }
+    };
+
+    const material = new THREE.ShaderMaterial({
+        uniforms: uniforms,
+        vertexShader: `
+            varying vec2 vUv;
+            void main() {
+                vUv = uv;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `,
+        fragmentShader: `
+            uniform float uTime;
+            uniform vec3 uColor1;
+            uniform vec3 uColor2;
+            varying vec2 vUv;
+            
+            void main() {
+                // Moving grid logic
+                vec2 grid = abs(fract(vUv * 20.0 - vec2(0.0, uTime * 0.5)) - 0.5) / fwidth(vUv * 20.0);
+                float line = min(grid.x, grid.y);
+                float alpha = 1.0 - smoothstep(0.0, 0.1, line);
+                
+                // Fade out in distance
+                float dist = distance(vUv, vec2(0.5, 0.0)); // horizon fade
+                float glow = 1.0 - smoothstep(0.0, 0.8, dist);
+
+                vec3 finalColor = mix(uColor1, uColor2, alpha * glow * 2.0);
+                gl_FragColor = vec4(finalColor, 1.0);
+            }
+        `,
+        transparent: true,
+        side: THREE.DoubleSide
+    });
+
+    floorMesh = new THREE.Mesh(geometry, material);
+    floorMesh.rotation.x = -Math.PI / 2;
+    floorMesh.position.y = -2;
+    scene.add(floorMesh);
+}
+
+/**
+ * THE CUTE CHARACTER (Constructed Geometry)
+ */
+function createCuteCharacter() {
+    animalContainer = new THREE.Group();
+    
+    // Materials
+    const furMat = new THREE.MeshStandardMaterial({ 
+        color: 0xff9ff3, 
+        roughness: 0.4,
+        emissive: 0xff6b6b,
+        emissiveIntensity: 0.2
+    });
+    const whiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+    const darkMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
+
+    // BODY (Soft Box)
+    const bodyGeo = new THREE.BoxGeometry(1.2, 1, 1.5);
+    // Rounding hack: use subdivision modifier or just low poly style
+    animalBody = new THREE.Mesh(bodyGeo, furMat);
+    animalBody.position.y = -0.5;
+    animalContainer.add(animalBody);
+
+    // HEAD
+    const headGroup = new THREE.Group();
+    headGroup.position.set(0, 0.5, 0.6);
+    
+    const headGeo = new THREE.BoxGeometry(1.4, 1.2, 1.2);
+    animalHead = new THREE.Mesh(headGeo, furMat);
+    headGroup.add(animalHead);
+
+    // EYES
+    const eyeGeo = new THREE.SphereGeometry(0.15, 16, 16);
+    const eyeL = new THREE.Mesh(eyeGeo, darkMat);
+    eyeL.position.set(-0.35, 0.1, 0.6);
+    const eyeR = new THREE.Mesh(eyeGeo, darkMat);
+    eyeR.position.set(0.35, 0.1, 0.6);
+    headGroup.add(eyeL);
+    headGroup.add(eyeR);
+
+    // SNOUT
+    const snoutGeo = new THREE.BoxGeometry(0.4, 0.3, 0.2);
+    const snout = new THREE.Mesh(snoutGeo, whiteMat);
+    snout.position.set(0, -0.2, 0.65);
+    headGroup.add(snout);
+
+    // MOUTH (Hidden inside, opens)
+    const mouthGeo = new THREE.BoxGeometry(0.3, 0.1, 0.05);
+    animalMouth = new THREE.Mesh(mouthGeo, darkMat);
+    animalMouth.position.set(0, -0.4, 0.65);
+    headGroup.add(animalMouth);
+
+    // EARS
+    const earGeo = new THREE.ConeGeometry(0.3, 0.6, 4);
+    const earL = new THREE.Mesh(earGeo, furMat);
+    earL.position.set(-0.5, 0.7, 0);
+    earL.rotation.z = 0.3;
+    const earR = new THREE.Mesh(earGeo, furMat);
+    earR.position.set(0.5, 0.7, 0);
+    earR.rotation.z = -0.3;
+    headGroup.add(earL);
+    headGroup.add(earR);
+
+    animalBody.add(headGroup);
+    animalContainer.userData.head = headGroup; // Ref for animation
+
+    // TAIL
+    const tailGeo = new THREE.CylinderGeometry(0.1, 0.05, 0.8);
+    animalTail = new THREE.Mesh(tailGeo, furMat);
+    animalTail.position.set(0, 0, -0.8);
+    animalTail.rotation.x = -1;
+    animalBody.add(animalTail);
+
+    scene.add(animalContainer);
+}
+
+/**
+ * 3D TEXT GENERATION
+ */
+function createFlyingLetter(char) {
+    // We create a texture from canvas
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    
+    // Glow effect in texture
+    ctx.shadowColor = "#4ecdc4";
+    ctx.shadowBlur = 20;
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 180px 'Fredoka One'";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(char.toUpperCase(), 128, 128);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    
+    const mat = new THREE.SpriteMaterial({ 
+        map: texture, 
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.9
+    });
+
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(3, 3, 1);
+    sprite.position.set(0, 0, CONFIG.spawnDistance);
+    
+    // Add a trailing glow mesh behind it
+    const geo = new THREE.BoxGeometry(1.5, 1.5, 1.5);
+    const meshMat = new THREE.MeshBasicMaterial({ 
+        color: 0x4ecdc4, 
+        wireframe: true,
+        transparent: true, 
+        opacity: 0.3 
+    });
+    const cube = new THREE.Mesh(geo, meshMat);
+    sprite.add(cube); // Attach cube to sprite
+
+    sprite.userData = { 
+        char: char, 
+        active: true,
+        rotSpeed: Math.random() * 0.05 
+    };
+    
+    scene.add(sprite);
+    return sprite;
+}
+
+/**
+ * ------------------------------------------------------------------
+ * AUDIO (Tone.js)
+ * ------------------------------------------------------------------
+ */
+let synth, bassSynth, sparkle;
+
+async function initAudio() {
+    await Tone.start();
+    
+    // Cute Lead Synth
+    synth = new Tone.PolySynth(Tone.Synth, {
+        oscillator: { type: "fatsawtooth" },
+        envelope: { attack: 0.01, decay: 0.1, sustain: 0.1, release: 0.5 }
+    }).toDestination();
+    synth.volume.value = -8;
+
+    // Bass/Impact
+    bassSynth = new Tone.MembraneSynth().toDestination();
+
+    // Sparkle effect
+    sparkle = new Tone.Player().toDestination(); // Placeholder if we had samples, but we'll use synth
+}
+
+function playCorrectSound() {
+    // Play a happy major scale note based on combo
+    const notes = ["C5", "E5", "G5", "A5", "C6"];
+    const note = notes[STATE.combo % notes.length];
+    synth.triggerAttackRelease(note, "16n");
+    
+    // Bass thump
+    bassSynth.triggerAttackRelease("C2", "32n", Tone.now());
+}
+
+function playWrongSound() {
+    bassSynth.triggerAttackRelease("G1", "8n");
+}
+
+function playWinSound() {
+    const now = Tone.now();
+    synth.triggerAttackRelease("C4", "8n", now);
+    synth.triggerAttackRelease("E4", "8n", now + 0.1);
+    synth.triggerAttackRelease("G4", "8n", now + 0.2);
+    synth.triggerAttackRelease("C5", "2n", now + 0.3);
+}
+
+function playPoopSound() {
+    // Funny slide down
+    const pSynth = new Tone.Synth({
+        oscillator: { type: "triangle" },
+        envelope: { release: 0.5 }
+    }).toDestination();
+    pSynth.triggerAttackRelease("C3", "4n");
+    pSynth.frequency.rampTo("C1", 0.5);
+}
+
+/**
+ * ------------------------------------------------------------------
+ * GAMEPLAY LOGIC
+ * ------------------------------------------------------------------
+ */
+function startGame() {
+    document.getElementById('start-screen').classList.add('hidden');
+    STATE.isPlaying = true;
+    STATE.currentLevel = 0;
+    STATE.score = 0;
+    loadLevel(0);
+}
+
+function loadLevel(idx) {
+    if(idx >= CONFIG.levels.length) idx = 0; // Loop
+    STATE.currentLevel = idx;
+    STATE.levelProgress = 0;
+    STATE.entities.forEach(e => scene.remove(e));
+    STATE.entities = [];
+    STATE.queue = [];
+    
+    const lvl = CONFIG.levels[idx];
+    
+    // Generate Level Queue based on patterns
+    for(let i=0; i<STATE.levelTarget; i++) {
+        // Pick random pattern
+        const pat = lvl.pattern[Math.floor(Math.random() * lvl.pattern.length)];
+        // Add pattern chars to queue
+        pat.split('').forEach(c => STATE.queue.push(c));
+    }
+
+    // Update UI
+    const hints = lvl.keys.split('');
+    document.getElementById('hint-left').textContent = hints[0].toUpperCase();
+    document.getElementById('hint-right').textContent = hints[1] ? hints[1].toUpperCase() : hints[0].toUpperCase();
+
+    // Update Animal Color
+    const col = CONFIG.colors[idx % CONFIG.colors.length];
+    animalBody.material.color.setHex(col);
+}
+
+function spawnNext() {
+    if(STATE.queue.length === 0) return;
+    
+    const char = STATE.queue.shift();
+    const obj = createFlyingLetter(char);
+    
+    // Positioning: slight randomness x to make it look organic
+    obj.position.x = (Math.random() - 0.5) * 3;
+    
+    STATE.entities.push(obj);
+}
+
+// Input Handling
+document.addEventListener('keydown', (e) => {
+    if(!STATE.isPlaying) return;
+    const key = e.key.toLowerCase();
+    
+    // Find closest active letter
+    let hit = false;
+    // Sort by proximity (Z value closer to 0 is closer to player)
+    // Actually, closest to camera (z=8) is bad, we want closest to Animal (z=-1)
+    
+    // Filter entities that are within "hittable" range
+    // Let's say z > -20 and z < 2
+    const hittable = STATE.entities.filter(ent => ent.position.z > -30 && ent.position.z < 2);
+    
+    // Find first one matching key
+    const target = hittable.find(ent => ent.userData.char === key);
+
+    // Visual Key Feedback
+    document.querySelectorAll('.key-hint').forEach(k => {
+        if(k.textContent.toLowerCase() === key) {
+            k.classList.add('active');
+            setTimeout(() => k.classList.remove('active'), 100);
+        }
+    });
+
+    if(target) {
+        // SUCCESS
+        hit = true;
+        eatLetter(target);
+    } else {
+        // FAILURE (only if key is in current level set)
+        const lvlKeys = CONFIG.levels[STATE.currentLevel].keys;
+        if(lvlKeys.includes(key)) {
+            playWrongSound();
+            STATE.combo = 0;
+            updateHUD();
+            cameraShake();
+        }
+    }
+});
+
+function eatLetter(obj) {
+    playCorrectSound();
+    
+    STATE.score += 10 + (STATE.combo * 5);
+    STATE.combo++;
+    STATE.levelProgress++;
+    updateHUD();
+
+    // Visuals
+    createExplosion(obj.position, 0x4ecdc4);
+    triggerAnimalEatAnim();
+
+    // Remove
+    scene.remove(obj);
+    STATE.entities = STATE.entities.filter(e => e !== obj);
+
+    // Check Win
+    if(STATE.levelProgress >= STATE.queue.length + STATE.levelTarget && STATE.entities.length === 0) {
+        levelComplete();
+    }
+}
+
+function updateHUD() {
+    document.getElementById('score-display').textContent = `Punkte: ${STATE.score}`;
+    const comboEl = document.getElementById('combo-display');
+    if(STATE.combo > 1) {
+        comboEl.textContent = `COMBO x${STATE.combo}!`;
+        comboEl.classList.add('active');
+    } else {
+        comboEl.classList.remove('active');
+    }
+
+    // Highlight next target
+    // Find the closest entity
+    if(STATE.entities.length > 0) {
+        const next = STATE.entities[0]; // roughly closest due to push order
+        const disp = document.getElementById('current-target-display');
+        disp.textContent = next.userData.char.toUpperCase();
+        
+        if(next.position.z > -15) disp.classList.add('lit');
+        else disp.classList.remove('lit');
+    }
+}
+
+function triggerAnimalEatAnim() {
+    // Lung forward
+    const tl = new Timeline(); // Simple manual tween
+    
+    // 1. Open Mouth
+    animalMouth.scale.y = 5;
+    animalContainer.userData.head.position.z += 0.2;
+    
+    // 2. Jump up slighty
+    animalBody.position.y = 0; // Jump
+
+    setTimeout(() => {
+        animalMouth.scale.y = 1;
+        animalBody.position.y = -0.5;
+        animalContainer.userData.head.position.z -= 0.2;
+    }, 150);
+}
+
+function createExplosion(pos, color) {
+    const geometry = new THREE.BufferGeometry();
+    const count = 30;
+    const positions = new Float32Array(count * 3);
+    
+    for(let i=0; i<count*3; i++) {
+        positions[i] = (Math.random() - 0.5) * 2;
+    }
+    
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const mat = new THREE.PointsMaterial({ color: color, size: 0.5, transparent: true });
+    const pts = new THREE.Points(geometry, mat);
+    pts.position.copy(pos);
+    
+    scene.add(pts);
+    
+    // Animate removal
+    let frame = 0;
+    function animExplosion() {
+        frame++;
+        pts.scale.multiplyScalar(1.05);
+        mat.opacity -= 0.05;
+        if(frame < 20) requestAnimationFrame(animExplosion);
+        else scene.remove(pts);
+    }
+    animExplosion();
+}
+
+function cameraShake() {
+    const originalPos = camera.position.clone();
+    let frames = 10;
+    function shake() {
+        if(frames > 0) {
+            camera.position.x = originalPos.x + (Math.random() - 0.5) * 0.5;
+            frames--;
+            requestAnimationFrame(shake);
+        } else {
+            camera.position.copy(originalPos);
+        }
+    }
+    shake();
+}
+
+function levelComplete() {
+    STATE.isPlaying = false;
+    playWinSound();
+    
+    // Animal Celebration
+    let jumps = 0;
+    const interval = setInterval(() => {
+        animalBody.position.y = (jumps % 2 === 0) ? 0.5 : -0.5;
+        animalBody.rotation.y += Math.PI;
+        jumps++;
+        if(jumps > 6) {
+            clearInterval(interval);
+            doFunnyPoop();
+        }
+    }, 300);
+}
+
+function doFunnyPoop() {
+    // Position animal
+    animalContainer.rotation.y = Math.PI; // Face away
+    animalBody.rotation.x = 0.5; // Bend
+    
+    setTimeout(() => {
+        playPoopSound();
+        
+        // Spawn particles
+        const poopGeo = new THREE.DodecahedronGeometry(0.5);
+        const poopMat = new THREE.MeshStandardMaterial({color: 0x8B4513, roughness: 0.1, metalness: 0.5});
+        
+        for(let i=0; i<5; i++) {
+            const mesh = new THREE.Mesh(poopGeo, poopMat);
+            mesh.position.set(0, -0.5, -2); // Behind animal
+            mesh.position.x += (Math.random()-0.5);
+            scene.add(mesh);
+            
+            // Pop out animation
+            let velY = 0.2;
+            function drop() {
+                mesh.position.y += velY;
+                velY -= 0.02;
+                if(mesh.position.y > -2) requestAnimationFrame(drop);
+            }
+            drop();
+        }
+
+        setTimeout(() => {
+            // Reset
+            animalContainer.rotation.y = 0;
+            animalBody.rotation.x = 0;
+            document.getElementById('level-screen').classList.remove('hidden');
+            document.getElementById('level-msg').textContent = `Level ${STATE.currentLevel+1} geschafft!`;
+        }, 2000);
+
+    }, 500);
+}
+
+/**
+ * ------------------------------------------------------------------
+ * MAIN LOOP
+ * ------------------------------------------------------------------
+ */
+function animate() {
+    requestAnimationFrame(animate);
+    
+    const delta = clock.getDelta();
+    const time = clock.getElapsedTime();
+
+    // Shader Updates
+    if(floorMesh) {
+        floorMesh.material.uniforms.uTime.value = time;
+    }
+
+    // Animal Idle Animation
+    if(animalContainer) {
+        // Breathe
+        animalBody.scale.y = 1 + Math.sin(time * 5) * 0.02;
+        animalBody.scale.x = 1 + Math.cos(time * 5) * 0.02;
+        
+        // Tail Wag
+        animalTail.rotation.z = Math.sin(time * 10) * 0.3;
+        
+        // Head Bob
+        animalContainer.userData.head.rotation.z = Math.sin(time * 2) * 0.05;
+    }
+
+    // Game Logic
+    if(STATE.isPlaying) {
+        // Spawning
+        if(time > STATE.nextSpawnTime) {
+            spawnNext();
+            // Rhythm: Spawn fast in bursts
+            // Simple logic: constant stream based on distance
+            STATE.nextSpawnTime = time + (1.5 - (STATE.currentLevel * 0.1));
+        }
+
+        // Move Entities
+        STATE.entities.forEach(ent => {
+            ent.position.z += (10 * delta); // Move towards camera
+            ent.children[0].rotation.x += delta;
+            ent.children[0].rotation.y += delta;
+            
+            // Missed check (passed camera)
+            if(ent.position.z > 5) {
+                // Reset/Miss logic
+                ent.position.z = CONFIG.spawnDistance; // Just loop it back to keep it easy for kids
+                STATE.combo = 0;
+                updateHUD();
+            }
+        });
+    }
+
+    renderer.render(scene, camera);
+}
+
+// Buttons
+document.getElementById('start-btn').addEventListener('click', () => {
+    initAudio().then(() => {
+        initThree();
+        startGame();
+    });
+});
+
+document.getElementById('next-level-btn').addEventListener('click', () => {
+    document.getElementById('level-screen').classList.add('hidden');
+    STATE.isPlaying = true;
+    loadLevel(STATE.currentLevel + 1);
+});
+
+// Initial boot logic is in button click to allow audio context
+</script>
+</body>
+</html>
